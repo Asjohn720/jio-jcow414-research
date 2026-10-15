@@ -2,6 +2,8 @@
 /*
  * Device Tree Source for Sercomm JCOW414 (Reliance JioFiber Home Gateway)
  *
+ * Copyright (C) 2026 Anand (@Asjohn720)
+ *
  * SoC: EcoNet EN7528HU (Dual-Core MIPS 1004Kc @ 900MHz, 4 VPEs)
  * RAM: 512 MB DDR3 (SK Hynix H5TQ4G63EFR)
  * Flash: 256 MB SPI-NAND (Micron MT29F2G01) + 1 MB SPI-NOR (Puya P25Q80L)

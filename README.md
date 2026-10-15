@@ -201,6 +201,11 @@ J4 Header (left to right)
 * **Failsafe Testing:** Custom firmware can be written to Bank 1 (`mtd4` / `tclinux`) while leaving Bank 2 (`mtd7` / `tclinux_slave`) untouched as a rollback guarantee.
 * **Alternative (Entware):** Users who wish to keep original GPON/Wi-Fi vendor performance while running custom packages (AdGuard Home, WireGuard, Cloudflare tunnels, transmission) can install Entware using `jf_entware_mips.sh` directly into `/flash2` on rooted stock firmware.
 
+## Authors & Contributors
+
+- **Anand ([@Asjohn720](https://github.com/Asjohn720))** — Sercomm JCOW414 root exploit, flash extraction, hardware pinout mapping, and OpenWrt Device Tree Source ([`en7528-sercomm-jcow414.dts`](openwrt/en7528-sercomm-jcow414.dts)).
+- **zke-7D6** — Initial JCOW414 hardware teardown and serial UART research.
+
 ---
 
 ## Community Resources & Credits
