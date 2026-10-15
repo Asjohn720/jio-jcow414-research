@@ -50,10 +50,39 @@
 - TR-069 client (smartcableONTApp) contacts Jio backend on startup
 - Dual firmware design: tclinux (primary) + tclinux_slave (backup)
 
+## Session 5 — Firmware Downgrade, Root Exploitation, & MTD Dump
+
+- Acquired official `SRCMTF1_JCOW414_R2.15.img` and `SRCMTF1_JCOW414_R2.15.sig`
+- Uploaded and flashed via Web UI Firmware Upgrade page
+- Successfully booted into R2.15 on alternate partition bank (`tclinux_slave` / `mtd7`)
+- Generated fresh config backup (`.enc`) on R2.15
+- Successfully decrypted backup with static `JCOW414.key` (AES-128-CBC with SHA256 KDF)
+- Injected Lua payload into line 1 (`os.execute("/usr/sbin/telnetd")...`)
+- Re-encrypted and uploaded via Maintenance → Restore
+- Achieved root Telnet shell on port 23 (`root` / `password`)
+- Created persistence script at `/flash2/pfrm2.0/etc/voipInit` to persist root password across reboots
+- Removed `/flash/telnetDisable` and killed `smartcableONTApp` (TR-069)
+- Started Busybox `httpd` on port 8080 and dumped all 8 active MTD partitions (`mtd0` to `mtd11`)
+- Decapsulated `mtd2_kernel.bin`: EcoNet `HDR2` container with load address `0x80002000`, unpacked 11.4MB MIPS Linux 3.18.21 kernel via LZMA offset `0x100`
+- Extracted `mtd3_rootfs.bin` SquashFS filesystem, preserving all kernel modules (`xpon.ko`, `mt7603eap.ko`, `eth.ko`)
+
+## Key Discoveries
+
+- Router manufactured by Sercomm, customized by RIL (Reliance)
+- Internal EcoNet codename: TC3162 / EN751221
+- Build hostname: root@tn795
+- Firmware R2.52.1 has read-only filesystem and randomized root password
+- R2.15 downgrade successfully bypasses all authentication locks
+- Firmware uses dual-bank partition layout (`tclinux` on `mtd4` and `tclinux_slave` on `mtd7`)
+- Stock kernel packaged in EcoNet `HDR2` container with entry point `0x80002000`
+- TR-069 client (smartcableONTApp) can be disabled permanently to avoid forced OTA upgrades
+
 ## Pending
 
-- [ ] Firmware downgrade to R2.15 via web UI
-- [ ] Full directory fuzz of web UI with gobuster
-- [ ] CH341A + SOIC-8 clip for direct flash read
-- [ ] Extract /etc/shadow from SquashFS, crack hash with hashcat
+- [x] Firmware downgrade to R2.15 via web UI
+- [x] Telnet root access and persistence configuration
+- [x] Full MTD partition dump (`mtd0` - `mtd11`)
+- [x] Kernel extraction and rootfs decompilation
+- [ ] CH341A SPI NOR flash read of U19 for bootloader patching
 - [ ] Document "Thirdparty configuration exists" — identify source
+
