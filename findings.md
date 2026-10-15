@@ -77,13 +77,38 @@
 - Stock kernel packaged in EcoNet `HDR2` container with entry point `0x80002000`
 - TR-069 client (smartcableONTApp) can be disabled permanently to avoid forced OTA upgrades
 
+## Session 6 — Hardware Pinout & Peripheral Reverse Engineering
+
+- Extracted live device-tree from running kernel via `/proc/device-tree` (`device-tree.tar.gz`)
+- Compatible platform string verified: `econet,en751221` / `econet,en7528`
+- Wi-Fi PCIe vendor and device IDs identified:
+  - Bus 1: `14c3:7603` &rarr; MediaTek MT7603E (2.4GHz 802.11b/g/n)
+  - Bus 2: `14c3:7663` &rarr; MediaTek MT7613E (5GHz 802.11a/n/ac)
+- Decompiled `ledctl1` and parsed `/userfs/led.conf` to extract exact GPIO assignments:
+  - **Tricolor Red LED:** GPIO 27
+  - **Tricolor Green LED:** GPIO 25
+  - **Tricolor Blue LED:** GPIO 23
+  - **Reset Button:** GPIO 0 (Active Low, Mode 5 input)
+  - **WPS Button:** GPIO 4 (Active Low, Mode 5 input)
+  - **USB 1 VBUS Power:** GPIO 9
+  - **USB 2 VBUS Power:** GPIO 11
+  - **PHY TX Power Disable:** GPIO 16
+- Queried `/proc/tc3162/eth_portmap` and `/proc/tc3162/eth_port_status`:
+  - Internal Switch Port 1 &rarr; LAN1
+  - Internal Switch Port 2 &rarr; LAN2
+  - Internal Switch Port 3 &rarr; LAN3
+  - Internal Switch Port 4 &rarr; LAN4
+- Authored initial OpenWrt Device Tree Source: `openwrt/en7528-sercomm-jcow414.dts`
+
 ## Pending
 
 - [x] Firmware downgrade to R2.15 via web UI
 - [x] Telnet root access and persistence configuration
 - [x] Full MTD partition dump (`mtd0` - `mtd11`)
 - [x] Kernel extraction and rootfs decompilation
-- [ ] OpenWrt porting for EcoNet EN7528 target / Entware packaging
+- [x] Live device-tree and hardware GPIO pinout extraction
+- [x] OpenWrt Device Tree Source (`.dts`) authored
+- [ ] Compile test OpenWrt image using `target/linux/econet/en7528`
+- [ ] Safe flash test OpenWrt kernel to Bank 1 (`mtd4`)
 - [ ] CH341A SPI NOR flash read of U19 for bootloader patching
-- [ ] Document "Thirdparty configuration exists" — identify source
 

@@ -16,7 +16,7 @@ Goals: Root access, flash decapsulation, hardware documentation, and porting Ope
 | Firmware dump | ✅ Complete | All MTD partitions (`mtd0`-`mtd11`) extracted & backed up |
 | Kernel decapsulation | ✅ Complete | EcoNet `HDR2` container unpacked; LZMA MIPS kernel extracted |
 | Bootloader access | ✅ Bypassed | Interactive prompt bypassed via root shell; full `mtd0` binary dumped |
-| OpenWrt research | 🔄 In Progress | Analyzing `target/linux/econet/en7528` and device tree |
+| OpenWrt research | 🔄 In Progress | Device tree authored; target mapped to `target/linux/econet/en7528` |
 
 ---
 
@@ -105,13 +105,32 @@ Navigate to `http://<router-ip>:8080/` in your browser to download all binary pa
 |---|---|---|
 | **Model** | Sercomm JCOW414 | Manufactured for Reliance Jio Fiber |
 | **Main SoC** | EcoNet EN7528HU | MIPS 1004Kc @ 900MHz, 4 cores (TC3162 / EN751221) |
-| **RAM** | 512MB DDR3 | SK Hynix H5TQ4G63EFR (4Gbit) |
+| **RAM** | 512MB DDR3 | SK Hynix H5TQ4G63EFR (432MB usable System RAM) |
 | **SPI NOR Flash** | 1MB (8Mbit) | Puya P25Q80L (U19, SOP-8, Stage 1 Bootloader) |
 | **SPI NAND Flash**| 256MB (2Gbit) | Micron MT29F2G01 (Kernel, Rootfs, Config data) |
-| **Wi-Fi 2.4GHz** | MediaTek MT7592N | 802.11b/g/n (U12) |
-| **Wi-Fi 5GHz** | MediaTek MT7613BEN | 802.11a/n/ac + Bluetooth combo (U26) |
-| **Ethernet** | Gigabit LAN | Integrated switch |
+| **Wi-Fi 2.4GHz** | MediaTek MT7603E | 802.11b/g/n (PCIe Bus 1, `14c3:7603`) |
+| **Wi-Fi 5GHz** | MediaTek MT7613E | 802.11a/n/ac (PCIe Bus 2, `14c3:7663`) |
+| **Ethernet** | 4x Gigabit LAN | Integrated switch (`eth0.1` - `eth0.4`) |
+| **USB** | USB 3.0 Host | xHCI controller (`u3h` / `ippc`) |
 | **Fiber (PON)** | GPON (SC/APC) | Integrated optical transceiver |
+
+### GPIO & Peripheral Map
+
+Extracted from `/userfs/led.conf`, `ledctl1`, and kernel `/proc/tc3162/`:
+
+| Function | Pin / Resource | Active State / Note |
+|---|---|---|
+| **Status LED — Red** | GPIO 27 | Active High |
+| **Status LED — Green** | GPIO 25 | Active High |
+| **Status LED — Blue** | GPIO 23 | Active High |
+| **Reset Button** | GPIO 0 | Active Low (Input) |
+| **WPS Button** | GPIO 4 | Active Low (Input) |
+| **USB 1 Power (VBUS)** | GPIO 9 | Active High |
+| **USB 2 Power (VBUS)** | GPIO 11 | Active High |
+| **LAN Port 1 (LAN1)** | Switch Port 1 | Gigabit (`eth0.1`) |
+| **LAN Port 2 (LAN2)** | Switch Port 2 | Gigabit (`eth0.2`) |
+| **LAN Port 3 (LAN3)** | Switch Port 3 | Gigabit (`eth0.3`) |
+| **LAN Port 4 (LAN4)** | Switch Port 4 | Gigabit (`eth0.4`) |
 
 ---
 
@@ -176,8 +195,10 @@ J4 Header (left to right)
 ## OpenWrt Development Notes
 
 * **Architecture:** MIPS 1004Kc (little-endian, 32-bit).
-* **Upstream Target:** OpenWrt has support for the EcoNet EN7528 platform under `target/linux/econet/en7528` (introduced for devices like the Dasan H660GM-A).
-* **Packaging Requirement:** Custom kernels must be wrapped with the `HDR2` header with load address `0x80002000` to be executed by `bootbase`.
+* **Device Tree Source:** See [`openwrt/en7528-sercomm-jcow414.dts`](openwrt/en7528-sercomm-jcow414.dts) for complete pinout and peripheral bindings.
+* **Upstream Target:** OpenWrt supports the EcoNet EN7528 platform under `target/linux/econet/en7528` (and PR #20104 `target/linux/airoha`).
+* **Kernel Image Packaging:** Custom kernels must be wrapped with the EcoNet `HDR2` header with load address `0x80002000` and LZMA-compressed.
+* **Failsafe Testing:** Custom firmware can be written to Bank 1 (`mtd4` / `tclinux`) while leaving Bank 2 (`mtd7` / `tclinux_slave`) untouched as a rollback guarantee.
 * **Alternative (Entware):** Users who wish to keep original GPON/Wi-Fi vendor performance while running custom packages (AdGuard Home, WireGuard, Cloudflare tunnels, transmission) can install Entware using `jf_entware_mips.sh` directly into `/flash2` on rooted stock firmware.
 
 ---

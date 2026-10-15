@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * Device Tree Source for Sercomm JCOW414 (Reliance JioFiber Home Gateway)
+ *
+ * SoC: EcoNet EN7528HU (Dual-Core MIPS 1004Kc @ 900MHz, 4 VPEs)
+ * RAM: 512 MB DDR3 (SK Hynix H5TQ4G63EFR)
+ * Flash: 256 MB SPI-NAND (Micron MT29F2G01) + 1 MB SPI-NOR (Puya P25Q80L)
+ * 2.4GHz Wi-Fi: MediaTek MT7603E (PCIe Bus 1, 14c3:7603)
+ * 5GHz Wi-Fi: MediaTek MT7613E (PCIe Bus 2, 14c3:7663)
+ * Ethernet: 4x Gigabit LAN Ports (Internal Switch ports 1-4)
+ */
+
+/dts-v1/;
+
+#include "en7528.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "Sercomm JCOW414 (JioFiber)";
+	compatible = "sercomm,jcow414", "econet,en7528", "econet,en751221";
+
+	aliases {
+		serial0 = &uart0;
+		led-boot = &led_power_blue;
+		led-failsafe = &led_power_red;
+		led-running = &led_power_green;
+		led-upgrade = &led_power_blue;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 earlycon";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00002000 0x1b000000>; /* 432 MB usable out of 512 MB */
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			gpios = <&gpio 0 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
+		};
+
+		wps {
+			label = "wps";
+			gpios = <&gpio 4 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_WPS_BUTTON>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_power_red: red {
+			label = "red:status";
+			gpios = <&gpio 27 GPIO_ACTIVE_HIGH>;
+		};
+
+		led_power_green: green {
+			label = "green:status";
+			gpios = <&gpio 25 GPIO_ACTIVE_HIGH>;
+		};
+
+		led_power_blue: blue {
+			label = "blue:status";
+			gpios = <&gpio 23 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	usb_vbus1: regulator-usb-vbus1 {
+		compatible = "regulator-fixed";
+		regulator-name = "usb_vbus1";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		gpio = <&gpio 9 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+	};
+
+	usb_vbus2: regulator-usb-vbus2 {
+		compatible = "regulator-fixed";
+		regulator-name = "usb_vbus2";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		gpio = <&gpio 11 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-always-on;
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&pcie {
+	status = "okay";
+
+	pcie@0,0 {
+		status = "okay";
+
+		/* MediaTek MT7603E 2.4GHz 802.11b/g/n */
+		wifi@0,0 {
+			reg = <0x0000 0 0 0 0>;
+			mediatek,mtd-eeprom = <&romfile 0x2000>;
+		};
+	};
+
+	pcie@1,0 {
+		status = "okay";
+
+		/* MediaTek MT7613E 5GHz 802.11a/n/ac */
+		wifi@1,0 {
+			reg = <0x0800 0 0 0 0>;
+			mediatek,mtd-eeprom = <&romfile 0x8000>;
+		};
+	};
+};
+
+&spi_nand {
+	status = "okay";
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "bootloader";
+			reg = <0x00000000 0x00040000>;
+			read-only;
+		};
+
+		romfile: partition@40000 {
+			label = "romfile";
+			reg = <0x00040000 0x00040000>;
+			read-only;
+		};
+
+		partition@80000 {
+			label = "tclinux";
+			reg = <0x00080000 0x02800000>; /* 40 MB Primary Bank */
+		};
+
+		partition@2880000 {
+			label = "tclinux_slave";
+			reg = <0x02880000 0x02800000>; /* 40 MB Backup Bank */
+		};
+
+		partition@5080000 {
+			label = "opt0";
+			reg = <0x05080000 0x00800000>;
+		};
+
+		partition@5880000 {
+			label = "opt1";
+			reg = <0x05880000 0x00800000>;
+		};
+
+		partition@6080000 {
+			label = "ubifs_config";
+			reg = <0x06080000 0x01a00000>;
+		};
+
+		partition@7a80000 {
+			label = "config";
+			reg = <0x07a80000 0x00200000>;
+		};
+
+		partition@7c80000 {
+			label = "ubifs_data";
+			reg = <0x07c80000 0x05a00000>;
+		};
+
+		partition@ddc0000 {
+			label = "reservearea";
+			reg = <0x0ddc0000 0x00240000>;
+			read-only;
+		};
+	};
+};
+
+&switch {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@1 {
+			reg = <1>;
+			label = "lan1";
+		};
+
+		port@2 {
+			reg = <2>;
+			label = "lan2";
+		};
+
+		port@3 {
+			reg = <3>;
+			label = "lan3";
+		};
+
+		port@4 {
+			reg = <4>;
+			label = "lan4";
+		};
+	};
+};
