@@ -100,7 +100,27 @@
   - Internal Switch Port 4 &rarr; LAN4
 - Authored initial OpenWrt Device Tree Source: `openwrt/en7528-sercomm-jcow414.dts`
 
-## Pending
+## Session 7 — OpenWrt Compilation, Dual-Bank Flashing, & Verified Boot
+
+- Set up build environment in WSL2 Ubuntu with GCC 14, Musl, and OpenWrt Airoha/EcoNet staging branch
+- Verified upstream device profile `Device/jiofiber_jcow414` in `target/linux/econet/image/en7528.mk`
+- Configured custom distribution branding: `OpenWrt-Asjohn720` (v1.0-JCOW414)
+- Fixed WSL PATH space delimiter issue and compiled factory image via `make -j16` (Linux kernel 6.18.55)
+- Binaries generated:
+  - `openwrt-asjohn720-1.0-jcow414-econet-en7528-jiofiber_jcow414-squashfs-tclinux.trx` (9.8 MB)
+  - `openwrt-asjohn720-1.0-jcow414-econet-en7528-jiofiber_jcow414-squashfs-sysupgrade.bin` (8.7 MB)
+- Discovered stock router `mtd` tool requirement: `-f` flag needed to bypass Broadcom `HDR0` check for EcoNet `HDR2` images (`mtd -f write /tmp/openwrt.trx tclinux`)
+- Flashed custom firmware exclusively to Bank 1 (`tclinux` / `mtd4`), preserving stock R2.15 on Bank 2 (`tclinux_slave` / `mtd7`)
+- Swapped active boot flag via stock utility `/usr/bin/sys bootflag swap` (`current boot_flag = 0`)
+- Rebooted router into fully functional OpenWrt LuCI web interface (`http://192.168.1.1`):
+  - Model: `JioFiber JCOW414`
+  - Platform: `EcoNet-EN75xx` (`econet/en7528`)
+  - Firmware Version: `OpenWrt by Asjohn720 1.0-JCOW414`
+  - Kernel: `6.18.55`
+  - RAM: `432.22 MiB` usable (76% free)
+  - Switch: all 4 LAN ports operational with link status detection
+
+## Project Milestones
 
 - [x] Firmware downgrade to R2.15 via web UI
 - [x] Telnet root access and persistence configuration
@@ -108,7 +128,9 @@
 - [x] Kernel extraction and rootfs decompilation
 - [x] Live device-tree and hardware GPIO pinout extraction
 - [x] OpenWrt Device Tree Source (`.dts`) authored
-- [ ] Compile test OpenWrt image using `target/linux/econet/en7528`
-- [ ] Safe flash test OpenWrt kernel to Bank 1 (`mtd4`)
+- [x] Compile functional OpenWrt image using `target/linux/econet/en7528`
+- [x] Safe flash test OpenWrt image to Bank 1 (`mtd4`)
+- [x] Successful boot into OpenWrt LuCI Web Dashboard
 - [ ] CH341A SPI NOR flash read of U19 for bootloader patching
+
 

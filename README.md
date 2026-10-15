@@ -3,7 +3,7 @@
 Personal research project on an owned Sercomm Jio Fiber JCOW414 router (EcoNet EN7528HU platform).  
 Goals: Root access, flash decapsulation, hardware documentation, and porting OpenWrt / Entware.
 
-> **Status: Root Achieved & Partitions Dumped** — Permanent root shell access unlocked, all 8 MTD partitions dumped, kernel decapsulated. OpenWrt research in progress.
+> **Status: OpenWrt Running Live** — Permanent root shell access unlocked, flash decapsulated, and OpenWrt (Linux 6.18) successfully compiled, flashed, and running live on the JCOW414.
 
 ---
 
@@ -16,13 +16,13 @@ Goals: Root access, flash decapsulation, hardware documentation, and porting Ope
 | Firmware dump | ✅ Complete | All MTD partitions (`mtd0`-`mtd11`) extracted & backed up |
 | Kernel decapsulation | ✅ Complete | EcoNet `HDR2` container unpacked; LZMA MIPS kernel extracted |
 | Bootloader access | ✅ Bypassed | Interactive prompt bypassed via root shell; full `mtd0` binary dumped |
-| OpenWrt research | 🔄 In Progress | Device tree authored; target mapped to `target/linux/econet/en7528` |
+| OpenWrt firmware | ✅ Running | Successfully compiled & running OpenWrt LuCI on Bank 1 (`mtd4`) |
 
 ---
 
 ## Root Access & Setup Guide
 
-Follow this step-by-step guide to unlock permanent root shell access, disable remote ISP auto-updates, and back up all flash partitions.
+Follow this step-by-step guide to unlock permanent root shell access, disable remote ISP auto-updates, back up partitions, and install OpenWrt.
 
 ### 1. Web UI Firmware Downgrade
 Downgrade to R2.15 to unlock configuration decryption:
@@ -80,7 +80,7 @@ killall -9 smartcableONTApp 2>/dev/null
 chmod 000 /usr/sbin/smartcableONTApp 2>/dev/null
 ```
 
-### 4. Partition Dump Extraction
+### 4. Partition Dump Extraction (Optional Backup)
 Start Busybox `httpd` to download backups over your browser:
 ```sh
 /pfrm2.0/bin/iptables -I fwInBypass -p tcp --dport 8080 -m ifgroup --ifgroup-in 0x1/0x1 -j ACCEPT
@@ -96,6 +96,38 @@ cat /dev/mtd11 > /tmp/mtd_backup/mtd11_config.bin
 httpd -p 8080 -h /tmp/mtd_backup
 ```
 Navigate to `http://<router-ip>:8080/` in your browser to download all binary partition dumps.
+
+### 5. Installing OpenWrt (Easiest Method — Prebuilt Image)
+
+You can flash pre-compiled OpenWrt images directly onto Bank 1 (`tclinux` / `mtd4`) without touching your stock firmware on Bank 2 (`tclinux_slave` / `mtd7`).
+
+1. Download `openwrt-asjohn720-1.0-jcow414-econet-en7528-jiofiber_jcow414-squashfs-tclinux.trx` from the [Releases](https://github.com/Asjohn720/jio-jcow414-research/releases) tab.
+2. Start a local HTTP server on your PC in the download directory:
+   ```powershell
+   python -m http.server 8000
+   ```
+3. Inside the Telnet shell on the router, download the image:
+   ```sh
+   cd /tmp
+   wget http://<your-pc-ip>:8000/openwrt-asjohn720-1.0-jcow414-econet-en7528-jiofiber_jcow414-squashfs-tclinux.trx -O /tmp/openwrt.trx
+   ```
+4. Flash exclusively to Bank 1 (`tclinux`) using `-f` (to bypass Broadcom TRX validation for EcoNet HDR2):
+   ```sh
+   mtd -f write /tmp/openwrt.trx tclinux
+   ```
+5. Switch the active boot flag to Bank 1:
+   ```sh
+   /usr/bin/sys bootflag swap
+   ```
+6. Verify that `current boot_flag = 0`:
+   ```sh
+   /usr/bin/sys boot read
+   ```
+7. Reboot into OpenWrt:
+   ```sh
+   reboot
+   ```
+8. Connect your PC to **LAN1** via Ethernet and open **`http://192.168.1.1`** to access the LuCI Web Dashboard!
 
 ---
 
@@ -200,6 +232,37 @@ J4 Header (left to right)
 * **Kernel Image Packaging:** Custom kernels must be wrapped with the EcoNet `HDR2` header with load address `0x80002000` and LZMA-compressed.
 * **Failsafe Testing:** Custom firmware can be written to Bank 1 (`mtd4` / `tclinux`) while leaving Bank 2 (`mtd7` / `tclinux_slave`) untouched as a rollback guarantee.
 * **Alternative (Entware):** Users who wish to keep original GPON/Wi-Fi vendor performance while running custom packages (AdGuard Home, WireGuard, Cloudflare tunnels, transmission) can install Entware using `jf_entware_mips.sh` directly into `/flash2` on rooted stock firmware.
+
+### Building OpenWrt From Source (Advanced Method)
+
+For developers who want to compile their own custom image:
+
+1. In Ubuntu / WSL2, install the build dependencies:
+   ```bash
+   sudo apt update && sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib \
+   gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
+   ```
+2. Clone the OpenWrt repository with Airoha/EcoNet support:
+   ```bash
+   git clone --depth=1 -b airoha https://github.com/Sirherobrine23/openwrt.git openwrt-jcow414
+   cd openwrt-jcow414
+   ./scripts/feeds update -a && ./scripts/feeds install -a
+   ```
+3. Copy the Device Tree Source to the target:
+   ```bash
+   cp openwrt/en7528-sercomm-jcow414.dts target/linux/econet/dts/
+   ```
+4. Run the automated configuration script [`openwrt/setup_config.sh`](openwrt/setup_config.sh):
+   ```bash
+   bash openwrt/setup_config.sh
+   ```
+5. Compile the firmware (using all available CPU cores):
+   ```bash
+   make download -j8
+   make -j$(nproc)
+   ```
+6. The resulting dual-bank factory image is output at:  
+   `bin/targets/econet/en7528/openwrt-asjohn720-1.0-jcow414-econet-en7528-jiofiber_jcow414-squashfs-tclinux.trx`
 
 ## Authors & Contributors
 
